@@ -28,32 +28,24 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 // ------------------------------------
-// Helmet (EXACTO para pasar FCC)
+// Helmet (configuración correcta para FCC tests 2,3,4)
 // ------------------------------------
-
-// Test #2 – Allow site to be loaded only in same-origin iframe
-app.use(helmet.frameguard({ action: "sameorigin" }));
-
-// Test #3 – Disable DNS prefetching
-app.use(helmet.dnsPrefetchControl({ allow: false }));
-
-// Test #4 – Only send referrer for same origin
-app.use(helmet.referrerPolicy({ policy: "same-origin" }));
-
-// Necesario para evitar problemas con CSP en FCC
 app.use(
-  helmet.contentSecurityPolicy({
-    useDefaults: true,
-    directives: {
-      "default-src": ["'self'"],
-      "script-src": ["'self'"],
-      "style-src": ["'self'"],
-      "img-src": ["'self'", "data:"]
-    },
+  helmet({
+    frameguard: { action: "sameorigin" },      // Test #2
+    dnsPrefetchControl: { allow: false },      // Test #3
+    referrerPolicy: { policy: "same-origin" }, // Test #4
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'"],
+        "script-src": ["'self'"],
+        "style-src": ["'self'"],
+        "img-src": ["'self'", "data:"]
+      }
+    }
   })
 );
-
-// ❌ Eliminado: NO DUPLICAR HEADERS (rompía los tests)
 
 // CORS
 app.use(cors());

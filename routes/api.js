@@ -78,7 +78,6 @@ router.put("/threads/:board", async (req, res) => {
  *       REPLIES        *
  ************************/
 
-// POST reply
 router.post("/replies/:board", async (req, res) => {
   const { text, delete_password, thread_id } = req.body;
   const board = req.params.board;
@@ -90,6 +89,7 @@ router.post("/replies/:board", async (req, res) => {
     text,
     delete_password,
     created_on: new Date(),
+    reported: false    // <--- Aquí está la corrección para test 6
   });
 
   thread.bumped_on = new Date();
@@ -97,6 +97,7 @@ router.post("/replies/:board", async (req, res) => {
 
   return res.redirect(`/b/${board}/${thread_id}`);
 });
+
 
 // GET full thread
 router.get("/replies/:board", async (req, res) => {
