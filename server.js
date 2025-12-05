@@ -22,12 +22,39 @@ mongoose
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Helmet configuración exacta FCC
-app.use(helmet.frameguard({ action: "sameorigin" }));      // Test 2
-app.use(helmet.dnsPrefetchControl({ allow: false }));      // Test 3
-app.use(helmet.referrerPolicy({ policy: "same-origin" })); // Test 4
+// Helmet configuración exacta FCC + CSP con frame-ancestors
+// Primero usamos piezas concretas de Helmet que pediste:
+app.use(helmet.frameguard({ action: "sameorigin" }));      // Test 2 (X-Frame-Options)
+// Test 3: no permitir prefetch DNS
+app.use(helmet.dnsPrefetchControl({ allow: false }));      
+// Test 4: enviar referente solo a mismo origen
+app.use(helmet.referrerPolicy({ policy: "same-origin" })); 
 app.use(helmet.noSniff());
 app.use(helmet.hidePoweredBy());
+
+// Añadimos además Content-Security-Policy con frame-ancestors 'self'
+// Esto asegura compatibilidad moderna para que solo tu origen pueda embeber la app
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // ajusta si no usas inline styles
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      // directiva crucial para el test 2 moderno:
+      frameAncestors: ["'self'"],
+      upgradeInsecureRequests: [],
+    },
+  })
+);
+
+// (opcional / redundante) asegúrate de que X-Frame-Options esté presente para navegadores legacy
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  next();
+});
 
 // CORS
 app.use(cors());
@@ -47,7 +74,9 @@ app.get('/', (req, res) => {
   res.sendFile(process.cwd() + '/views/index.html');
 });
 
-// Start server
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Start server solo si no estamos en test (importante para los tests FCC)
+if (env !== 'test') {
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
 
 module.exports = app;
