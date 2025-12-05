@@ -42,13 +42,11 @@ router.get("/threads/:board", async (req, res) => {
       text: t.text,
       created_on: t.created_on,
       bumped_on: t.bumped_on,
-      replies: t.replies
-        .slice(-3) // las 3 más recientes
-        .map((r) => ({
-          _id: r._id,
-          text: r.text,
-          created_on: r.created_on,
-        })),
+      replies: t.replies.slice(-3).map((r) => ({
+        _id: r._id,
+        text: r.text,
+        created_on: r.created_on,
+      })),
       replycount: t.replies.length,
     };
   });
@@ -116,7 +114,6 @@ router.get("/replies/:board", async (req, res) => {
       _id: r._id,
       text: r.text,
       created_on: r.created_on,
-      reported: r.reported,
     })),
   });
 });
