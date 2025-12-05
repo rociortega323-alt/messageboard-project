@@ -13,34 +13,30 @@ const env = process.env.NODE_ENV || 'development';
 
 const DB = env === 'test' ? process.env.DB_TEST : process.env.DB;
 
-// ---------- MIDDLEWARE ----------
+// Middlewares
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Helmet básico
-app.use(helmet());
+// Helmet ALLOW ONLY WHAT FCC ACCEPTS
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    frameguard: { action: 'sameorigin' },
+    dnsPrefetchControl: { allow: false },
+    referrerPolicy: { policy: 'same-origin' }
+  })
+);
 
-// Aseguramos manualmente los headers requeridos por las pruebas
-app.use((req, res, next) => {
-  // Sólo permitir iFrame desde mismo origen
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  // Evitar DNS prefetch
-  res.setHeader('X-DNS-Prefetch-Control', 'off');
-  // Enviar referer solo a orígenes propios
-  res.setHeader('Referrer-Policy', 'same-origin');
-  next();
-});
-
-// CORS (si tu front está en mismo dominio podrías ajustar)
+// CORS
 app.use(cors());
 
-// Archivos estáticos y vistas (mantén tus html en /views y assets en /public)
+// Static files
 app.use('/public', express.static(process.cwd() + '/public'));
 
-// Rutas API
+// API
 app.use('/api', apiRoutes);
 
-// Rutas frontend
+// Views
 app.route('/b/:board/').get((req, res) => {
   res.sendFile(process.cwd() + '/views/board.html');
 });
@@ -51,17 +47,14 @@ app.route('/').get((req, res) => {
   res.sendFile(process.cwd() + '/views/index.html');
 });
 
-// ---------- DB & SERVER ----------
+// DB + Start server
 mongoose
   .connect(DB)
-  .then(() => console.log('✓ Connected to MongoDB'))
-  .catch((err) => console.error('✗ MongoDB connection error:', err))
+  .then(() => console.log("✓ Connected to MongoDB"))
+  .catch((err) => console.error(err))
   .finally(() => {
-    // IMPORTANT: cuando NODE_ENV === 'test' NO levantamos el listener
     if (env !== 'test') {
-      app.listen(PORT, () => {
-        console.log(`Your app is listening on port ${PORT}`);
-      });
+      app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
     }
   });
 
