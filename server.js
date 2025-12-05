@@ -17,15 +17,25 @@ const DB = env === 'test' ? process.env.DB_TEST : process.env.DB;
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Helmet ALLOW ONLY WHAT FCC ACCEPTS
+// Helmet EXACTO requerido por freeCodeCamp
 app.use(
   helmet({
-    contentSecurityPolicy: false,
-    frameguard: { action: 'sameorigin' },
-    dnsPrefetchControl: { allow: false },
-    referrerPolicy: { policy: 'same-origin' }
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'self'"]
+      },
+    },
+    frameguard: { action: "sameorigin" }, // Test #2
+    dnsPrefetchControl: { allow: false }, // Test #3
+    referrerPolicy: { policy: "same-origin" } // Test #4
   })
 );
+
 
 // CORS
 app.use(cors());
