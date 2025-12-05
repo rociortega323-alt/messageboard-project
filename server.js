@@ -13,34 +13,34 @@ const env = process.env.NODE_ENV || 'development';
 
 const DB = env === 'test' ? process.env.DB_TEST : process.env.DB;
 
+// ------------------------------------
 // Middlewares
+// ------------------------------------
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Helmet EXACTO requerido por freeCodeCamp
+// Helmet SOLO con lo requerido por FCC
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'"],
-        connectSrc: ["'self'"],
-        frameAncestors: ["'self'"]
-      },
-    },
-    frameguard: { action: "sameorigin" }, // Test #2
-    dnsPrefetchControl: { allow: false }, // Test #3
+    contentSecurityPolicy: false,     // ❌ NO usar CSP (Render lo bloquea)
+    frameguard: { action: "sameorigin" },  // Test #2
+    dnsPrefetchControl: { allow: false },  // Test #3
     referrerPolicy: { policy: "same-origin" } // Test #4
   })
 );
 
+// Headers manuales (garantizados para Render)
+app.use((req, res, next) => {
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");     // Test #2
+  res.setHeader("X-DNS-Prefetch-Control", "off");     // Test #3
+  res.setHeader("Referrer-Policy", "same-origin");    // Test #4
+  next();
+});
 
 // CORS
 app.use(cors());
 
-// Static files
+// Archivos estáticos
 app.use('/public', express.static(process.cwd() + '/public'));
 
 // API
@@ -57,7 +57,9 @@ app.route('/').get((req, res) => {
   res.sendFile(process.cwd() + '/views/index.html');
 });
 
-// DB + Start server
+// ------------------------------------
+// Database + Server
+// ------------------------------------
 mongoose
   .connect(DB)
   .then(() => console.log("✓ Connected to MongoDB"))
