@@ -14,33 +14,33 @@ const env = process.env.NODE_ENV || 'development';
 const DB = env === 'test' ? process.env.DB_TEST : process.env.DB;
 
 // ------------------------------------
-// Middlewares
+// Middleware
 // ------------------------------------
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Helmet SOLO con lo requerido por FCC
+// Helmet EXACTO según FCC
 app.use(
   helmet({
-    contentSecurityPolicy: false,     // ❌ NO usar CSP (Render lo bloquea)
-    frameguard: { action: "sameorigin" },  // Test #2
-    dnsPrefetchControl: { allow: false },  // Test #3
-    referrerPolicy: { policy: "same-origin" } // Test #4
+    frameguard: { action: "sameorigin" },     // Test #2
+    dnsPrefetchControl: { allow: false },     // Test #3
+    referrerPolicy: { policy: "same-origin" }, // Test #4
+    contentSecurityPolicy: false              // IMPORTANTE
   })
 );
 
-// Headers manuales (garantizados para Render)
+// Headers duplicados para Render (asegura que FCC los vea)
 app.use((req, res, next) => {
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");     // Test #2
-  res.setHeader("X-DNS-Prefetch-Control", "off");     // Test #3
-  res.setHeader("Referrer-Policy", "same-origin");    // Test #4
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+  res.setHeader("Referrer-Policy", "same-origin");
   next();
 });
 
 // CORS
 app.use(cors());
 
-// Archivos estáticos
+// Static
 app.use('/public', express.static(process.cwd() + '/public'));
 
 // API
@@ -48,26 +48,4 @@ app.use('/api', apiRoutes);
 
 // Views
 app.route('/b/:board/').get((req, res) => {
-  res.sendFile(process.cwd() + '/views/board.html');
-});
-app.route('/b/:board/:threadid').get((req, res) => {
-  res.sendFile(process.cwd() + '/views/thread.html');
-});
-app.route('/').get((req, res) => {
-  res.sendFile(process.cwd() + '/views/index.html');
-});
-
-// ------------------------------------
-// Database + Server
-// ------------------------------------
-mongoose
-  .connect(DB)
-  .then(() => console.log("✓ Connected to MongoDB"))
-  .catch((err) => console.error(err))
-  .finally(() => {
-    if (env !== 'test') {
-      app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
-    }
-  });
-
-module.exports = app;
+  res.sendFile(process.cwd() + '/views/board
