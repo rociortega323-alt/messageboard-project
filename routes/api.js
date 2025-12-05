@@ -8,16 +8,21 @@ const router = express.Router();
  *      THREADS         *
  ************************/
 
-// POST thread
+// POST a new thread
 router.post("/threads/:board", async (req, res) => {
   const board = req.params.board;
   const { text, delete_password } = req.body;
 
   try {
+    const now = new Date();
     const thread = new Thread({
       board,
       text,
       delete_password,
+      created_on: now,
+      bumped_on: now,
+      reported: false,
+      replies: []
     });
 
     await thread.save();
@@ -27,7 +32,7 @@ router.post("/threads/:board", async (req, res) => {
   }
 });
 
-// GET threads (10 threads, 3 replies)
+// GET 10 most recent threads with 3 replies each
 router.get("/threads/:board", async (req, res) => {
   const board = req.params.board;
 
@@ -36,20 +41,20 @@ router.get("/threads/:board", async (req, res) => {
     .limit(10)
     .lean();
 
-  const cleaned = threads.map((t) => {
-    return {
-      _id: t._id,
-      text: t.text,
-      created_on: t.created_on,
-      bumped_on: t.bumped_on,
-      replies: t.replies.slice(-3).map((r) => ({
+  const cleaned = threads.map((t) => ({
+    _id: t._id,
+    text: t.text,
+    created_on: t.created_on,
+    bumped_on: t.bumped_on,
+    replies: t.replies
+      .slice(-3)
+      .map((r) => ({
         _id: r._id,
         text: r.text,
-        created_on: r.created_on,
+        created_on: r.created_on
       })),
-      replycount: t.replies.length,
-    };
-  });
+    replycount: t.replies.length
+  }));
 
   res.json(cleaned);
 });
@@ -59,8 +64,7 @@ router.delete("/threads/:board", async (req, res) => {
   const { thread_id, delete_password } = req.body;
 
   const thread = await Thread.findById(thread_id);
-  if (!thread || thread.delete_password !== delete_password)
-    return res.send("incorrect password");
+  if (!thread || thread.delete_password !== delete_password) return res.send("incorrect password");
 
   await Thread.deleteOne({ _id: thread_id });
   return res.send("success");
@@ -78,35 +82,40 @@ router.put("/threads/:board", async (req, res) => {
  *       REPLIES        *
  ************************/
 
+// POST a new reply
 router.post("/replies/:board", async (req, res) => {
   const { text, delete_password, thread_id } = req.body;
   const board = req.params.board;
 
-  const thread = await Thread.findById(thread_id);
-  if (!thread) return res.send("not found");
+  try {
+    const thread = await Thread.findById(thread_id);
+    if (!thread) return res.send("not found");
 
-  thread.replies.push({
-    text,
-    delete_password,
-    created_on: new Date(),
-    reported: false    // <--- Aquí está la corrección para test 6
-  });
+    const now = new Date();
+    thread.replies.push({
+      text,
+      delete_password,
+      created_on: now,
+      reported: false
+    });
 
-  thread.bumped_on = new Date();
-  await thread.save();
+    thread.bumped_on = now;
+    await thread.save();
 
-  return res.redirect(`/b/${board}/${thread_id}`);
+    return res.redirect(`/b/${board}/${thread_id}`);
+  } catch (err) {
+    return res.send("error");
+  }
 });
 
-
-// GET full thread
+// GET full thread with all replies
 router.get("/replies/:board", async (req, res) => {
   const thread_id = req.query.thread_id;
 
   const thread = await Thread.findById(thread_id).lean();
   if (!thread) return res.send("not found");
 
-  return res.json({
+  res.json({
     _id: thread._id,
     text: thread.text,
     created_on: thread.created_on,
@@ -114,12 +123,12 @@ router.get("/replies/:board", async (req, res) => {
     replies: thread.replies.map((r) => ({
       _id: r._id,
       text: r.text,
-      created_on: r.created_on,
-    })),
+      created_on: r.created_on
+    }))
   });
 });
 
-// DELETE reply (set "[deleted]")
+// DELETE reply (replace text with "[deleted]")
 router.delete("/replies/:board", async (req, res) => {
   const { thread_id, reply_id, delete_password } = req.body;
 
@@ -127,8 +136,7 @@ router.delete("/replies/:board", async (req, res) => {
   if (!thread) return res.send("not found");
 
   const reply = thread.replies.id(reply_id);
-  if (!reply || reply.delete_password !== delete_password)
-    return res.send("incorrect password");
+  if (!reply || reply.delete_password !== delete_password) return res.send("incorrect password");
 
   reply.text = "[deleted]";
   await thread.save();
