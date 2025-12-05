@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const env = process.env.NODE_ENV || 'development';
 const DB = env === 'test' ? process.env.DB_TEST : process.env.DB;
 
-// Database Connection
+// Connect to DB
 mongoose
   .connect(DB, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("MongoDB connected"))
@@ -22,29 +22,21 @@ mongoose
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// ✔ EXACTO para FCC
-app.use(helmet.frameguard({ action: "sameorigin" }));      // Test 2
-app.use(helmet.dnsPrefetchControl({ allow: false }));      // Test 3
-app.use(helmet.referrerPolicy({ policy: "same-origin" })); // Test 4
+// Helmet (pero SIN helmet.contentSecurityPolicy)
+app.use(helmet.frameguard({ action: "sameorigin" }));
+app.use(helmet.dnsPrefetchControl({ allow: false }));
+app.use(helmet.referrerPolicy({ policy: "same-origin" }));
 app.use(helmet.noSniff());
 app.use(helmet.hidePoweredBy());
 
-// ❗ CSP mínima obligatoria (para que Render NO inyecte la suya)
-//    Pero SIN frame-ancestors y SIN conflicto con iframe.
-app.use(
-  helmet.contentSecurityPolicy({
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
-      objectSrc: ["'none'"]
-      // ❌ NO poner frame-ancestors
-      // ❌ NO poner upgradeInsecureRequests
-    },
-  })
-);
+// CSP EXACTO (setHeader) → evita que Render agregue nada
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'"
+  );
+  next();
+});
 
 // CORS
 app.use(cors());
