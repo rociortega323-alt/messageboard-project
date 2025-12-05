@@ -1,163 +1,191 @@
-"use strict";
+'use strict';
 
-const Thread = require("../models/Thread");
-const express = require("express");
-const router = express.Router();
+const Thread = require('../models/thread');
+const Reply = require('../models/reply');
 
-/************************
- *      THREADS         *
- ************************/
+module.exports = function (app) {
 
-// POST a new thread
-router.post("/threads/:board", async (req, res) => {
-  const board = req.params.board;
-  const { text, delete_password } = req.body;
+  // ==========================
+  //   THREADS
+  // ==========================
+  app.route('/api/threads/:board')
 
-  try {
-    const now = new Date();
-    const thread = new Thread({
-      board,
-      text,
-      delete_password,
-      created_on: now,
-      bumped_on: now,
-      reported: false,
-      replies: []
+    // CREATE THREAD
+    .post(async (req, res) => {
+      const board = req.params.board;
+      const { text, delete_password } = req.body;
+
+      try {
+        const thread = new Thread({
+          board,
+          text,
+          delete_password,
+          created_on: new Date(),
+          bumped_on: new Date(),
+          reported: false,
+          replies: []
+        });
+
+        await thread.save();
+        res.json(thread);
+      } catch (err) {
+        res.status(500).send('error');
+      }
+    })
+
+    // GET THREADS
+    .get(async (req, res) => {
+      const board = req.params.board;
+
+      try {
+        const threads = await Thread.find({ board })
+          .sort({ bumped_on: -1 })
+          .limit(10)
+          .lean();
+
+        const formatted = threads.map(t => ({
+          _id: t._id,
+          text: t.text,
+          created_on: t.created_on,
+          bumped_on: t.bumped_on,
+          replycount: t.replies.length,
+          replies: t.replies
+            .slice(-3)
+            .map(r => ({
+              _id: r._id,
+              text: r.text,
+              created_on: r.created_on
+            }))
+        }));
+
+        res.json(formatted);
+      } catch (err) {
+        res.status(500).send('error');
+      }
+    })
+
+    // DELETE THREAD
+    .delete(async (req, res) => {
+      const { thread_id, delete_password } = req.body;
+
+      try {
+        const thread = await Thread.findById(thread_id);
+
+        if (!thread) return res.send('incorrect password');
+
+        if (thread.delete_password !== delete_password) {
+          return res.send('incorrect password');
+        }
+
+        await Thread.findByIdAndDelete(thread_id);
+        res.send('success');
+      } catch (err) {
+        res.status(500).send('error');
+      }
+    })
+
+    // REPORT THREAD
+    .put(async (req, res) => {
+      const { report_id } = req.body;
+
+      try {
+        await Thread.findByIdAndUpdate(report_id, { reported: true });
+        res.send('reported');
+      } catch (err) {
+        res.status(500).send('error');
+      }
     });
 
-    await thread.save();
-    return res.redirect(`/b/${board}/`);
-  } catch (err) {
-    return res.send("error");
-  }
-});
+  // ==========================
+  //   REPLIES
+  // ==========================
+  app.route('/api/replies/:board')
 
-// GET 10 most recent threads with 3 replies each
-router.get("/threads/:board", async (req, res) => {
-  const board = req.params.board;
+    // CREATE REPLY
+    .post(async (req, res) => {
+      const board = req.params.board;
+      const { thread_id, text, delete_password } = req.body;
 
-  const threads = await Thread.find({ board })
-    .sort({ bumped_on: -1 })
-    .limit(10)
-    .lean();
+      try {
+        const reply = {
+          _id: new Reply()._id,
+          text,
+          delete_password,
+          created_on: new Date(),
+          reported: false
+        };
 
-  const cleaned = threads.map((t) => ({
-    _id: t._id,
-    text: t.text,
-    created_on: t.created_on,
-    bumped_on: t.bumped_on,
-    replies: t.replies
-      .slice(-3)
-      .map((r) => ({
-        _id: r._id,
-        text: r.text,
-        created_on: r.created_on
-      })),
-    replycount: t.replies.length
-  }));
+        const thread = await Thread.findById(thread_id);
 
-  res.json(cleaned);
-});
+        thread.replies.push(reply);
+        thread.bumped_on = new Date();
 
-// DELETE thread
-router.delete("/threads/:board", async (req, res) => {
-  const { thread_id, delete_password } = req.body;
+        await thread.save();
 
-  const thread = await Thread.findById(thread_id);
-  if (!thread || thread.delete_password !== delete_password) return res.send("incorrect password");
+        res.json(thread);
+      } catch (err) {
+        res.status(500).send('error');
+      }
+    })
 
-  await Thread.deleteOne({ _id: thread_id });
-  return res.send("success");
-});
+    // GET THREAD + ALL REPLIES
+    .get(async (req, res) => {
+      const { thread_id } = req.query;
 
-// REPORT thread
-router.put("/threads/:board", async (req, res) => {
-  const { thread_id } = req.body;
+      try {
+        const thread = await Thread.findById(thread_id).lean();
 
-  await Thread.findByIdAndUpdate(thread_id, { reported: true });
-  return res.send("reported");
-});
+        if (!thread) return res.send('error');
 
-/************************
- *       REPLIES        *
- ************************/
+        thread.replies = thread.replies.map(r => ({
+          _id: r._id,
+          text: r.text,
+          created_on: r.created_on
+        }));
 
-// POST a new reply
-router.post("/replies/:board", async (req, res) => {
-  const { text, delete_password, thread_id } = req.body;
-  const board = req.params.board;
+        res.json(thread);
+      } catch (err) {
+        res.status(500).send('error');
+      }
+    })
 
-  try {
-    const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send("not found");
+    // DELETE REPLY
+    .delete(async (req, res) => {
+      const { thread_id, reply_id, delete_password } = req.body;
 
-    const now = new Date();
-    thread.replies.push({
-      text,
-      delete_password,
-      created_on: now,
-      reported: false
+      try {
+        const thread = await Thread.findById(thread_id);
+
+        const reply = thread.replies.id(reply_id);
+
+        if (!reply || reply.delete_password !== delete_password) {
+          return res.send('incorrect password');
+        }
+
+        reply.text = '[deleted]';
+        await thread.save();
+
+        res.send('success');
+      } catch (err) {
+        res.status(500).send('error');
+      }
+    })
+
+    // REPORT REPLY
+    .put(async (req, res) => {
+      const { thread_id, reply_id } = req.body;
+
+      try {
+        const thread = await Thread.findById(thread_id);
+
+        const reply = thread.replies.id(reply_id);
+        reply.reported = true;
+
+        await thread.save();
+
+        res.send('reported');
+      } catch (err) {
+        res.status(500).send('error');
+      }
     });
-
-    thread.bumped_on = now;
-    await thread.save();
-
-    return res.redirect(`/b/${board}/${thread_id}`);
-  } catch (err) {
-    return res.send("error");
-  }
-});
-
-// GET full thread with all replies
-router.get("/replies/:board", async (req, res) => {
-  const thread_id = req.query.thread_id;
-
-  const thread = await Thread.findById(thread_id).lean();
-  if (!thread) return res.send("not found");
-
-  res.json({
-    _id: thread._id,
-    text: thread.text,
-    created_on: thread.created_on,
-    bumped_on: thread.bumped_on,
-    replies: thread.replies.map((r) => ({
-      _id: r._id,
-      text: r.text,
-      created_on: r.created_on
-    }))
-  });
-});
-
-// DELETE reply (replace text with "[deleted]")
-router.delete("/replies/:board", async (req, res) => {
-  const { thread_id, reply_id, delete_password } = req.body;
-
-  const thread = await Thread.findById(thread_id);
-  if (!thread) return res.send("not found");
-
-  const reply = thread.replies.id(reply_id);
-  if (!reply || reply.delete_password !== delete_password) return res.send("incorrect password");
-
-  reply.text = "[deleted]";
-  await thread.save();
-
-  return res.send("success");
-});
-
-// REPORT reply
-router.put("/replies/:board", async (req, res) => {
-  const { thread_id, reply_id } = req.body;
-
-  const thread = await Thread.findById(thread_id);
-  if (!thread) return res.send("not found");
-
-  const reply = thread.replies.id(reply_id);
-  if (!reply) return res.send("not found");
-
-  reply.reported = true;
-  await thread.save();
-
-  return res.send("reported");
-});
-
-module.exports = router;
+};
