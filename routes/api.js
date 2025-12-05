@@ -1,199 +1,213 @@
 'use strict';
 
+const Thread = require('../models/Thread.js');
 const express = require('express');
 const router = express.Router();
-const Thread = require('../models/Thread.js');
 
-/*******************
- *   CREATE THREAD *
- *******************/
+/***************
+ *   THREADS   *
+ ***************/
+
+// Create thread
 router.post('/threads/:board', async (req, res) => {
   const board = req.params.board;
   const { text, delete_password } = req.body;
+
+  if (!text || !delete_password) return res.status(400).send('missing fields');
 
   try {
     const thread = new Thread({
       board,
       text,
       delete_password
+      // created_on and bumped_on defaults handled by schema
     });
 
-    const saved = await thread.save();
-    res.json(saved);  // <-- FCC lo requiere
+    await thread.save();
+    // redirect to board page (FC C project expects redirect)
+    res.redirect(`/b/${board}/`);
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/*******************
- *   GET THREADS   *
- *******************/
+// Get threads (most recent 10 by bumped_on, each with most recent 3 replies)
 router.get('/threads/:board', async (req, res) => {
   const board = req.params.board;
 
   try {
-    let threads = await Thread
+    const threads = await Thread
       .find({ board })
       .sort({ bumped_on: -1 })
       .limit(10)
       .lean();
 
-    threads = threads.map(t => {
-      // eliminar campos sensibles
-      delete t.delete_password;
-      delete t.reported;
+    // sanitize and trim replies
+    const out = threads.map(t => {
+      // sort replies by created_on desc
+      t.replies = (t.replies || []).sort((a, b) => new Date(b.created_on) - new Date(a.created_on));
+      // keep only 3 most recent
+      t.replies = t.replies.slice(0, 3).map(r => {
+        // remove sensitive fields
+        const { _id, text, created_on } = r;
+        return { _id, text, created_on };
+      });
 
-      // ordenar replies y limitar a 3
-      t.replies = t.replies
-        .sort((a, b) => b.created_on - a.created_on)
-        .map(r => {
-          delete r.delete_password;
-          delete r.reported;
-          return r;
-        })
-        .slice(0, 3);
-
-      return t;
+      // remove sensitive fields from thread
+      return {
+        _id: t._id,
+        board: t.board,
+        text: t.text,
+        created_on: t.created_on,
+        bumped_on: t.bumped_on,
+        replies: t.replies,
+        // note: reported and delete_password must not be sent
+      };
     });
 
-    res.json(threads);
+    res.json(out);
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/*********************
- *   DELETE THREAD   *
- *********************/
+// Delete thread
 router.delete('/threads/:board', async (req, res) => {
   const { thread_id, delete_password } = req.body;
 
+  if (!thread_id || !delete_password) return res.status(400).send('missing fields');
+
   try {
     const thread = await Thread.findById(thread_id);
+    if (!thread) return res.send('incorrect password'); // match tests behavior
 
-    if (!thread || thread.delete_password !== delete_password) {
-      return res.send("incorrect password");
+    if (thread.delete_password !== delete_password) {
+      return res.send('incorrect password');
     }
 
-    await thread.deleteOne();
-    return res.send("success");
-
+    await Thread.deleteOne({ _id: thread_id });
+    res.send('success');
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/********************
- *   REPORT THREAD  *
- ********************/
+// Report thread
 router.put('/threads/:board', async (req, res) => {
   const { thread_id } = req.body;
+  if (!thread_id) return res.status(400).send('missing fields');
 
   try {
-    await Thread.findByIdAndUpdate(thread_id, { reported: true });
-    res.send("reported");
+    const t = await Thread.findByIdAndUpdate(thread_id, { reported: true });
+    if (!t) return res.send('not found');
+    res.send('reported');
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/*******************
- *   CREATE REPLY   *
- *******************/
+/***************
+ *   REPLIES   *
+ ***************/
+
+// Create reply
 router.post('/replies/:board', async (req, res) => {
   const { thread_id, text, delete_password } = req.body;
+  const board = req.params.board;
+
+  if (!thread_id || !text || !delete_password) return res.status(400).send('missing fields');
 
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send("not found");
+    if (!thread) return res.status(404).send('not found');
 
-    const reply = {
+    const newReply = {
       text,
       delete_password,
-      created_on: new Date(),
-      reported: false
+      created_on: new Date()
     };
 
-    thread.replies.push(reply);
+    thread.replies.push(newReply);
     thread.bumped_on = new Date();
     await thread.save();
 
-    res.json(thread);  // <-- FCC requiere JSON, NO redirect
+    res.redirect(`/b/${board}/${thread_id}`);
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/*****************
- *   GET REPLIES *
- *****************/
+// Get replies (full thread)
 router.get('/replies/:board', async (req, res) => {
   const thread_id = req.query.thread_id;
+  if (!thread_id) return res.status(400).send('missing fields');
 
   try {
-    let thread = await Thread.findById(thread_id).lean();
-    if (!thread) return res.send("not found");
+    const thread = await Thread.findById(thread_id).lean();
+    if (!thread) return res.status(404).send('not found');
 
-    delete thread.delete_password;
-    delete thread.reported;
+    // Remove delete_password and reported from thread and replies
+    const sanitizedReplies = (thread.replies || []).map(r => ({
+      _id: r._id,
+      text: r.text,
+      created_on: r.created_on
+    }));
 
-    thread.replies = thread.replies.map(r => {
-      delete r.delete_password;
-      delete r.reported;
-      return r;
-    });
+    const out = {
+      _id: thread._id,
+      board: thread.board,
+      text: thread.text,
+      created_on: thread.created_on,
+      bumped_on: thread.bumped_on,
+      replies: sanitizedReplies
+    };
 
-    res.json(thread);
-
+    res.json(out);
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/********************
- *   DELETE REPLY   *
- ********************/
+// Delete reply
 router.delete('/replies/:board', async (req, res) => {
   const { thread_id, reply_id, delete_password } = req.body;
 
+  if (!thread_id || !reply_id || !delete_password) return res.status(400).send('missing fields');
+
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send("not found");
+    if (!thread) return res.send('incorrect password');
 
     const reply = thread.replies.id(reply_id);
+    if (!reply) return res.send('incorrect password');
 
-    if (!reply || reply.delete_password !== delete_password) {
-      return res.send("incorrect password");
-    }
+    if (reply.delete_password !== delete_password) return res.send('incorrect password');
 
-    reply.text = "[deleted]";
+    reply.text = '[deleted]';
     await thread.save();
 
-    res.send("success");
-
+    res.send('success');
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/*******************
- *   REPORT REPLY   *
- *******************/
+// Report reply
 router.put('/replies/:board', async (req, res) => {
   const { thread_id, reply_id } = req.body;
+  if (!thread_id || !reply_id) return res.status(400).send('missing fields');
 
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send("not found");
+    if (!thread) return res.send('not found');
 
     const reply = thread.replies.id(reply_id);
-    if (!reply) return res.send("not found");
+    if (!reply) return res.send('not found');
 
     reply.reported = true;
     await thread.save();
 
-    res.send("reported");
-
+    res.send('reported');
   } catch (err) {
     res.status(500).send(err.message);
   }
