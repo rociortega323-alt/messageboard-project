@@ -1,14 +1,12 @@
 'use strict';
 
-const Thread = require('../models/Thread.js');
 const express = require('express');
 const router = express.Router();
+const Thread = require('../models/Thread.js');
 
-/***************
- *   THREADS   *
- ***************/
-
-// Create thread
+/*******************
+ *   CREATE THREAD *
+ *******************/
 router.post('/threads/:board', async (req, res) => {
   const board = req.params.board;
   const { text, delete_password } = req.body;
@@ -20,33 +18,42 @@ router.post('/threads/:board', async (req, res) => {
       delete_password
     });
 
-    await thread.save();
-    res.redirect(`/b/${board}/`);
+    const saved = await thread.save();
+    res.json(saved);  // <-- FCC lo requiere
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// Get threads
+/*******************
+ *   GET THREADS   *
+ *******************/
 router.get('/threads/:board', async (req, res) => {
   const board = req.params.board;
 
   try {
-    const threads = await Thread
+    let threads = await Thread
       .find({ board })
       .sort({ bumped_on: -1 })
       .limit(10)
       .lean();
 
-    threads.forEach(t => {
-      t.replies.sort((a, b) => b.created_on - a.created_on);
-      t.replies = t.replies.slice(0, 3);
-
+    threads = threads.map(t => {
+      // eliminar campos sensibles
       delete t.delete_password;
-      t.replies = t.replies.map(r => {
-        delete r.delete_password;
-        return r;
-      });
+      delete t.reported;
+
+      // ordenar replies y limitar a 3
+      t.replies = t.replies
+        .sort((a, b) => b.created_on - a.created_on)
+        .map(r => {
+          delete r.delete_password;
+          delete r.reported;
+          return r;
+        })
+        .slice(0, 3);
+
+      return t;
     });
 
     res.json(threads);
@@ -55,118 +62,138 @@ router.get('/threads/:board', async (req, res) => {
   }
 });
 
-// Delete thread
+/*********************
+ *   DELETE THREAD   *
+ *********************/
 router.delete('/threads/:board', async (req, res) => {
   const { thread_id, delete_password } = req.body;
 
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread || thread.delete_password !== delete_password)
-      return res.send('incorrect password');
 
-    await Thread.deleteOne({ _id: thread_id });
-    res.send('success');
+    if (!thread || thread.delete_password !== delete_password) {
+      return res.send("incorrect password");
+    }
+
+    await thread.deleteOne();
+    return res.send("success");
+
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// Report thread
+/********************
+ *   REPORT THREAD  *
+ ********************/
 router.put('/threads/:board', async (req, res) => {
   const { thread_id } = req.body;
 
   try {
     await Thread.findByIdAndUpdate(thread_id, { reported: true });
-    res.send('reported');
+    res.send("reported");
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-/***************
- *   REPLIES   *
- ***************/
-
-// Create reply
+/*******************
+ *   CREATE REPLY   *
+ *******************/
 router.post('/replies/:board', async (req, res) => {
   const { thread_id, text, delete_password } = req.body;
-  const board = req.params.board;
 
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send('not found');
+    if (!thread) return res.send("not found");
 
-    thread.replies.push({
+    const reply = {
       text,
       delete_password,
-      created_on: new Date()
-    });
+      created_on: new Date(),
+      reported: false
+    };
 
+    thread.replies.push(reply);
     thread.bumped_on = new Date();
     await thread.save();
 
-    res.redirect(`/b/${board}/${thread_id}`);
+    res.json(thread);  // <-- FCC requiere JSON, NO redirect
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// Get replies
+/*****************
+ *   GET REPLIES *
+ *****************/
 router.get('/replies/:board', async (req, res) => {
   const thread_id = req.query.thread_id;
 
   try {
-    const thread = await Thread.findById(thread_id).lean();
-    if (!thread) return res.send('not found');
+    let thread = await Thread.findById(thread_id).lean();
+    if (!thread) return res.send("not found");
 
     delete thread.delete_password;
+    delete thread.reported;
+
     thread.replies = thread.replies.map(r => {
       delete r.delete_password;
+      delete r.reported;
       return r;
     });
 
     res.json(thread);
+
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// Delete reply
+/********************
+ *   DELETE REPLY   *
+ ********************/
 router.delete('/replies/:board', async (req, res) => {
   const { thread_id, reply_id, delete_password } = req.body;
 
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send('not found');
+    if (!thread) return res.send("not found");
 
     const reply = thread.replies.id(reply_id);
-    if (!reply || reply.delete_password !== delete_password)
-      return res.send('incorrect password');
 
-    reply.text = '[deleted]';
+    if (!reply || reply.delete_password !== delete_password) {
+      return res.send("incorrect password");
+    }
+
+    reply.text = "[deleted]";
     await thread.save();
 
-    res.send('success');
+    res.send("success");
+
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// Report reply
+/*******************
+ *   REPORT REPLY   *
+ *******************/
 router.put('/replies/:board', async (req, res) => {
   const { thread_id, reply_id } = req.body;
 
   try {
     const thread = await Thread.findById(thread_id);
-    if (!thread) return res.send('not found');
+    if (!thread) return res.send("not found");
 
     const reply = thread.replies.id(reply_id);
-    if (!reply) return res.send('not found');
+    if (!reply) return res.send("not found");
 
     reply.reported = true;
     await thread.save();
 
-    res.send('reported');
+    res.send("reported");
+
   } catch (err) {
     res.status(500).send(err.message);
   }
